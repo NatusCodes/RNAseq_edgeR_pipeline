@@ -38,27 +38,30 @@ Raw HTSeq count files
 
 ## Repository structure
 
-scripts/
+## Repository structure
 
-00_make_count_matrix.Rmd
+```
+RNAseq_edgeR_pipeline/
+│
+├── README.md
+├── analysis_settings_manuscript.md
+├── scripts/
+│   ├── 00_make_count_matrix.Rmd
+│   ├── 01_data_QC.Rmd
+│   ├── 02_DEG_analysis.Rmd
+│   ├── 03_volcano_plot.Rmd
+│   └── 04_individual_gene_plot.Rmd
+```
 
-Imports individual HTSeq count files and combines them into a single count matrix.
+### Script descriptions
 
-01_data_QC.Rmd
-
-Performs gene annotation, filtering, TMM normalization and quality control.
-
-02_DEG_analysis.Rmd
-
-Performs differential expression analysis using edgeR.
-
-03_volcano_plot.Rmd
-
-Creates publication-quality volcano plots.
-
-04_individual_gene_plot.Rmd
-
-Plots expression of selected genes using TMM-normalized logCPM values.
+| Script | Purpose |
+|---------|---------|
+| **00_make_count_matrix.Rmd** | Combines individual HTSeq count files into a single count matrix. |
+| **01_data_QC.Rmd** | Performs annotation, quality control, filtering and TMM normalization. |
+| **02_DEG_analysis.Rmd** | Performs differential expression analysis using edgeR. |
+| **03_volcano_plot.Rmd** | Generates publication-quality volcano plots and highlights genes of interest. |
+| **04_individual_gene_plot.Rmd** | Creates violin plots for selected genes using normalized expression values. |
 
 ## Requirements
 
@@ -76,17 +79,17 @@ Main packages:
 
 ## Running the analysis
 
+## Running the pipeline
+
 Run the scripts in the following order:
 
-1. 00_make_count_matrix.Rmd
+1. `00_make_count_matrix.Rmd`
+2. `01_data_QC.Rmd`
+3. `02_DEG_analysis.Rmd`
+4. `03_volcano_plot.Rmd`
+5. `04_individual_gene_plot.Rmd`
 
-2. 01_data_QC.Rmd
-
-3. 02_DEG_analysis.Rmd
-
-4. 03_volcano_plot.Rmd
-
-5. 04_individual_gene_plot.Rmd
+Each script contains a **USER SETTINGS** section where users can specify project-specific parameters such as directories, sample information, filtering thresholds, differential expression cut-offs and visualization settings.
 
 ## Input
 
