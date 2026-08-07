@@ -1,0 +1,862 @@
+---
+title: "02_DEG_analysis_NS_GH"
+output: html_document
+date: "2026-08-07"
+---
+
+############################################################
+# 02_DEG_analysis.R
+#
+# Purpose:
+#   Perform differential gene-expression analysis using
+#   edgeR on the filtered DGEList generated in 01_data_QC.R.
+#
+# Main steps:
+#   1. Load filtered edgeR object
+#   2. Check experimental-condition metadata
+#   3. Define the comparison
+#   4. Construct the design matrix
+#   5. Estimate dispersion
+#   6. Fit negative-binomial GLM
+#   7. Perform likelihood-ratio test
+#   8. Apply user-defined DEG thresholds
+#   9. Save complete and filtered DEG results
+#  10. Summarize up- and downregulated genes
+############################################################
+
+
+
+# ==========================================================
+# 1. USER SETTINGS
+# ==========================================================
+
+# ----------------------------------------------------------
+# Project directory
+# ----------------------------------------------------------
+
+# CHANGE THIS to the main directory of your own project.
+project_dir <- "YOUR/PROJECT/DIRECTORY/HERE"
+
+
+# ----------------------------------------------------------
+# Input file
+# ----------------------------------------------------------
+
+# Filtered + TMM-normalized edgeR object produced by
+# 01_data_QC.R
+dge_file <- "dge_fil.rds"
+
+
+# ----------------------------------------------------------
+# Experimental-condition column
+# ----------------------------------------------------------
+
+# Name of the column in dge_fil$samples containing the
+# experimental groups.
+condition_column <- "Condition"
+
+
+# ----------------------------------------------------------
+# DEFINE THE COMPARISON
+# ----------------------------------------------------------
+
+# Choose the groups to compare.
+#
+# The resulting log2 fold change will be:
+#
+#   comparison_group - reference_group
+#
+# Example:
+#
+#   comparison_group = "ES"
+#   reference_group  = "CTL"
+#
+# gives:
+#
+#   ES - CTL
+#
+# Therefore:
+#   positive logFC = higher in ES
+#   negative logFC = higher in CTL
+
+reference_group  <- "CTL"
+comparison_group <- "ES"
+
+
+# Name used in saved output files.
+# You can change this if desired.
+comparison_name <- paste0(
+  comparison_group,
+  "_vs_",
+  reference_group
+)
+
+
+# ----------------------------------------------------------
+# DEG CUTOFFS
+# ----------------------------------------------------------
+
+# Choose the thresholds that define a DEG.
+#
+# IMPORTANT:
+# edgeR performs the statistical test for ALL genes first.
+# These thresholds are applied afterwards to define the
+# subset considered differentially expressed.
+
+
+# ---- OPTION 1: original stringent cutoff ----
+# logFC_cutoff <- 1
+# FDR_cutoff   <- 0.05
+
+
+# ---- OPTION 2: smaller effect-size cutoff ----
+logFC_cutoff <- 0.1
+FDR_cutoff   <- 0.05
+
+
+# ---- OPTION 3: exploratory FDR threshold ----
+# logFC_cutoff <- 0
+# FDR_cutoff   <- 0.10
+
+
+# NOTE:
+# Only ONE pair of cutoff settings should be active.
+
+
+# ----------------------------------------------------------
+# Multiple-testing correction
+# ----------------------------------------------------------
+
+p_adjust_method <- "BH"
+
+
+# ----------------------------------------------------------
+# Sorting of complete DEG table
+# ----------------------------------------------------------
+
+# Options accepted by edgeR::topTags() include:
+#   "PValue"
+#   "logFC"
+#   "none"
+#
+# "PValue" is generally easiest for inspecting top results.
+sort_results_by <- "PValue"
+
+
+
+# ==========================================================
+# 2. LOAD PACKAGES
+# ==========================================================
+
+library(edgeR)
+
+
+
+# ==========================================================
+# 3. CHECK PROJECT DIRECTORY AND INPUT FILE
+# ==========================================================
+
+if (!dir.exists(project_dir)) {
+
+  stop(
+    paste0(
+      "Project directory does not exist:\n",
+      project_dir,
+      "\n\nPlease update 'project_dir' in USER SETTINGS."
+    )
+  )
+}
+
+
+dge_path <- file.path(
+  project_dir,
+  dge_file
+)
+
+
+if (!file.exists(dge_path)) {
+
+  stop(
+    paste0(
+      "Filtered DGE object not found:\n",
+      dge_path,
+      "\n\nRun the QC script first or check 'dge_file'."
+    )
+  )
+}
+
+
+
+# ==========================================================
+# 4. CHECK CUTOFF SETTINGS
+# ==========================================================
+
+if (!is.numeric(logFC_cutoff) ||
+    length(logFC_cutoff) != 1 ||
+    is.na(logFC_cutoff) ||
+    logFC_cutoff < 0) {
+
+  stop(
+    "logFC_cutoff must be one non-negative numeric value."
+  )
+}
+
+
+if (!is.numeric(FDR_cutoff) ||
+    length(FDR_cutoff) != 1 ||
+    is.na(FDR_cutoff) ||
+    FDR_cutoff <= 0 ||
+    FDR_cutoff > 1) {
+
+  stop(
+    "FDR_cutoff must be a numeric value >0 and <=1."
+  )
+}
+
+
+
+# ==========================================================
+# 5. CREATE OUTPUT FOLDERS
+# ==========================================================
+
+# Generate a descriptive cutoff label automatically.
+cutoff_label <- paste0(
+  "FDR_",
+  format(FDR_cutoff, trim = TRUE, scientific = FALSE),
+  "_absLog2FC_",
+  format(logFC_cutoff, trim = TRUE, scientific = FALSE)
+)
+
+
+deg_root_dir <- file.path(
+  project_dir,
+  "Results",
+  "DGEA"
+)
+
+
+deg_list_dir <- file.path(
+  deg_root_dir,
+  "DEG_lists",
+  cutoff_label
+)
+
+
+dir.create(
+  deg_list_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+message(
+  "Results will be saved to:\n",
+  deg_list_dir
+)
+
+
+
+# ==========================================================
+# 6. LOAD FILTERED edgeR OBJECT
+# ==========================================================
+
+dge_fil <- readRDS(
+  dge_path
+)
+
+
+if (!inherits(dge_fil, "DGEList")) {
+
+  stop(
+    "The loaded object is not an edgeR DGEList."
+  )
+}
+
+
+message(
+  "Filtered DGE object loaded."
+)
+
+message(
+  "Genes available for differential-expression testing: ",
+  nrow(dge_fil)
+)
+
+message(
+  "Samples: ",
+  ncol(dge_fil)
+)
+
+
+
+# ==========================================================
+# 7. CHECK CONDITION METADATA
+# ==========================================================
+
+if (!(condition_column %in% colnames(dge_fil$samples))) {
+
+  stop(
+    paste0(
+      "Condition column '",
+      condition_column,
+      "' was not found in dge_fil$samples.\n\n",
+      "Available columns:\n",
+      paste(
+        colnames(dge_fil$samples),
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# Convert condition to factor BEFORE constructing the design.
+dge_fil$samples[[condition_column]] <- factor(
+  dge_fil$samples[[condition_column]]
+)
+
+
+condition <- dge_fil$samples[[condition_column]]
+
+
+message(
+  "Available experimental groups: ",
+  paste(
+    levels(condition),
+    collapse = ", "
+  )
+)
+
+
+
+# ==========================================================
+# 8. CHECK REQUESTED GROUPS
+# ==========================================================
+
+if (!(reference_group %in% levels(condition))) {
+
+  stop(
+    paste0(
+      "Reference group '",
+      reference_group,
+      "' was not found in ",
+      condition_column,
+      "."
+    )
+  )
+}
+
+
+if (!(comparison_group %in% levels(condition))) {
+
+  stop(
+    paste0(
+      "Comparison group '",
+      comparison_group,
+      "' was not found in ",
+      condition_column,
+      "."
+    )
+  )
+}
+
+
+if (reference_group == comparison_group) {
+
+  stop(
+    "reference_group and comparison_group must be different."
+  )
+}
+
+
+# Check sample numbers per group.
+group_sizes <- table(condition)
+
+print(group_sizes)
+
+
+if (group_sizes[reference_group] < 2 ||
+    group_sizes[comparison_group] < 2) {
+
+  warning(
+    "One or both comparison groups contain fewer than two samples."
+  )
+}
+
+
+
+# ==========================================================
+# 9. CREATE DESIGN MATRIX
+# ==========================================================
+
+# Model contains one coefficient per experimental group.
+design <- model.matrix(
+  ~ 0 + condition
+)
+
+
+# Clean column names.
+colnames(design) <- levels(condition)
+
+
+message(
+  "Design matrix:"
+)
+
+print(design)
+
+
+message(
+  "Design columns: ",
+  paste(
+    colnames(design),
+    collapse = ", "
+  )
+)
+
+
+
+# ==========================================================
+# 10. DEFINE CONTRAST
+# ==========================================================
+
+# Define comparison explicitly:
+#
+#   comparison_group - reference_group
+#
+# Example:
+#
+#   ES - CTL
+#
+# Positive logFC therefore means higher expression in ES.
+
+contrast_expression <- paste0(
+  "`",
+  comparison_group,
+  "` - `",
+  reference_group,
+  "`"
+)
+
+
+contrast_matrix <- limma::makeContrasts(
+  contrasts = contrast_expression,
+  levels = design
+)
+
+
+message(
+  "Testing contrast: ",
+  comparison_group,
+  " - ",
+  reference_group
+)
+
+
+print(
+  contrast_matrix
+)
+
+
+
+# ==========================================================
+# 11. ESTIMATE DISPERSION
+# ==========================================================
+
+dge_fil <- estimateDisp(
+  dge_fil,
+  design
+)
+
+
+
+# ==========================================================
+# 12. FIT NEGATIVE-BINOMIAL GLM
+# ==========================================================
+
+fit <- glmFit(
+  dge_fil,
+  design
+)
+
+
+
+# ==========================================================
+# 13. LIKELIHOOD-RATIO TEST
+# ==========================================================
+
+lrt <- glmLRT(
+  fit,
+  contrast = contrast_matrix
+)
+
+
+
+# ==========================================================
+# 14. EXTRACT COMPLETE DIFFERENTIAL-EXPRESSION RESULTS
+# ==========================================================
+
+# This table contains ALL genes tested by edgeR.
+#
+# No logFC or FDR threshold has been applied yet.
+
+all_results <- topTags(
+  lrt,
+  n = Inf,
+  adjust.method = p_adjust_method,
+  sort.by = sort_results_by
+)$table
+
+
+# Add gene identifier as explicit column.
+all_results$Gene <- rownames(
+  all_results
+)
+
+
+# Move Gene to first column.
+all_results <- all_results[
+  c(
+    "Gene",
+    setdiff(
+      colnames(all_results),
+      "Gene"
+    )
+  )
+]
+
+
+message(
+  "Differential-expression statistics calculated for ",
+  nrow(all_results),
+  " genes."
+)
+
+
+
+# ==========================================================
+# 15. APPLY USER-DEFINED DEG THRESHOLDS
+# ==========================================================
+
+deg_results <- all_results[
+  all_results$FDR < FDR_cutoff &
+    abs(all_results$logFC) > logFC_cutoff,
+  ,
+  drop = FALSE
+]
+
+
+message(
+  "DEG definition:"
+)
+
+message(
+  "  |log2FC| > ",
+  logFC_cutoff
+)
+
+message(
+  "  FDR < ",
+  FDR_cutoff
+)
+
+
+message(
+  "Number of DEGs: ",
+  nrow(deg_results)
+)
+
+
+
+# ==========================================================
+# 16. CLASSIFY UP- AND DOWNREGULATED GENES
+# ==========================================================
+
+# Direction is relative to:
+#
+#   comparison_group - reference_group
+#
+# Therefore:
+#
+# positive logFC =
+#   higher in comparison_group
+#
+# negative logFC =
+#   higher in reference_group
+
+
+deg_up <- deg_results[
+  deg_results$logFC > 0,
+  ,
+  drop = FALSE
+]
+
+
+deg_down <- deg_results[
+  deg_results$logFC < 0,
+  ,
+  drop = FALSE
+]
+
+
+message(
+  "Upregulated in ",
+  comparison_group,
+  ": ",
+  nrow(deg_up)
+)
+
+
+message(
+  "Downregulated in ",
+  comparison_group,
+  " / higher in ",
+  reference_group,
+  ": ",
+  nrow(deg_down)
+)
+
+
+
+# ==========================================================
+# 17. SAVE COMPLETE edgeR RESULTS
+# ==========================================================
+
+complete_results_file <- file.path(
+  deg_list_dir,
+  paste0(
+    "all_tested_genes_",
+    comparison_name,
+    ".csv"
+  )
+)
+
+
+write.csv(
+  all_results,
+  complete_results_file,
+  row.names = FALSE
+)
+
+
+
+# ==========================================================
+# 18. SAVE FILTERED DEG RESULTS
+# ==========================================================
+
+deg_results_file <- file.path(
+  deg_list_dir,
+  paste0(
+    "DEG_",
+    comparison_name,
+    ".csv"
+  )
+)
+
+
+write.csv(
+  deg_results,
+  deg_results_file,
+  row.names = FALSE
+)
+
+
+
+# ==========================================================
+# 19. SAVE UP- AND DOWNREGULATED DEG LISTS
+# ==========================================================
+
+write.csv(
+  deg_up,
+  file.path(
+    deg_list_dir,
+    paste0(
+      "DEG_",
+      comparison_name,
+      "_up_in_",
+      comparison_group,
+      ".csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+write.csv(
+  deg_down,
+  file.path(
+    deg_list_dir,
+    paste0(
+      "DEG_",
+      comparison_name,
+      "_down_in_",
+      comparison_group,
+      ".csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+
+# ==========================================================
+# 20. CREATE DEG SUMMARY
+# ==========================================================
+
+deg_summary <- data.frame(
+
+  Comparison =
+    paste(
+      comparison_group,
+      "vs",
+      reference_group
+    ),
+
+  Tested_genes =
+    nrow(all_results),
+
+  log2FC_cutoff =
+    logFC_cutoff,
+
+  FDR_cutoff =
+    FDR_cutoff,
+
+  Total_DEGs =
+    nrow(deg_results),
+
+  Up_in_comparison_group =
+    nrow(deg_up),
+
+  Down_in_comparison_group =
+    nrow(deg_down),
+
+  stringsAsFactors = FALSE
+)
+
+
+print(
+  deg_summary
+)
+
+
+write.csv(
+  deg_summary,
+  file.path(
+    deg_list_dir,
+    paste0(
+      "DEG_summary_",
+      comparison_name,
+      ".csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+
+# ==========================================================
+# 21. SAVE ANALYSIS SETTINGS
+# ==========================================================
+
+analysis_settings <- data.frame(
+
+  Setting = c(
+    "Condition column",
+    "Reference group",
+    "Comparison group",
+    "Contrast",
+    "log2FC cutoff",
+    "FDR cutoff",
+    "P-value adjustment",
+    "Normalization"
+  ),
+
+  Value = c(
+    condition_column,
+    reference_group,
+    comparison_group,
+    paste0(
+      comparison_group,
+      " - ",
+      reference_group
+    ),
+    logFC_cutoff,
+    FDR_cutoff,
+    p_adjust_method,
+    "TMM normalization inherited from dge_fil.rds"
+  )
+)
+
+
+write.csv(
+  analysis_settings,
+  file.path(
+    deg_list_dir,
+    paste0(
+      "analysis_settings_",
+      comparison_name,
+      ".csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+
+# ==========================================================
+# 22. FINAL CHECKS
+# ==========================================================
+
+if (nrow(deg_results) == 0) {
+
+  warning(
+    paste0(
+      "No genes passed the selected DEG thresholds:\n",
+      "|log2FC| > ",
+      logFC_cutoff,
+      " and FDR < ",
+      FDR_cutoff
+    )
+  )
+}
+
+
+if (anyNA(all_results$FDR)) {
+
+  warning(
+    "Some genes have missing FDR values."
+  )
+}
+
+
+message(
+  "Differential-expression analysis completed successfully."
+)
+
+message(
+  "Complete results:\n",
+  complete_results_file
+)
+
+message(
+  "Filtered DEG results:\n",
+  deg_results_file
+)
+
+
+
+# ==========================================================
+# 23. SAVE SESSION INFORMATION
+# ==========================================================
+
+capture.output(
+  sessionInfo(),
+  file = file.path(
+    deg_list_dir,
+    paste0(
+      "sessionInfo_02_DEG_",
+      comparison_name,
+      ".txt"
+    )
+  )
+)

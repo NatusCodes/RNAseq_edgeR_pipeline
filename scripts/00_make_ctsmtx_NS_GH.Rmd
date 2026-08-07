@@ -1,0 +1,392 @@
+---
+title: "00_make_ctsmtx_NS_GH"
+output: html_document
+date: "2026-08-07"
+---
+############################################################
+# 00_make_count_matrix.R
+#
+# Purpose:
+#   Import individual HTSeq .count files and combine them
+#   into one gene-by-sample count matrix.
+#
+# Input:
+#   One .count file per sample
+#
+# Output:
+#   countmtx.csv
+#   sessionInfo_00_make_count_matrix.txt
+############################################################
+
+
+# ==========================================================
+# 1. USER SETTINGS
+# ==========================================================
+
+# ---- Project directory ----
+# CHANGE THIS to the main directory of your own project.
+project_dir <- "YOUR/PROJECT/DIRECTORY/HERE"
+
+# Folder containing the individual .count files.
+# Change "Counts" only if your folder has a different name.
+count_dir <- file.path(project_dir, "Counts")
+
+# File extension used for the count files.
+count_file_pattern <- "\\.count$"
+
+# Name of the output count matrix.
+output_file <- "countmtx.csv"
+
+
+# ==========================================================
+# 2. LOAD PACKAGES
+# ==========================================================
+
+library(dplyr)
+
+
+# ==========================================================
+# 3. CHECK DIRECTORIES
+# ==========================================================
+
+# Check whether the project directory exists.
+if (!dir.exists(project_dir)) {
+  stop(
+    paste0(
+      "Project directory does not exist:\n",
+      project_dir,
+      "\n\nPlease update 'project_dir' in the USER SETTINGS section."
+    )
+  )
+}
+
+# Check whether the count-file directory exists.
+if (!dir.exists(count_dir)) {
+  stop(
+    paste0(
+      "Count directory does not exist:\n",
+      count_dir,
+      "\n\nPlease check 'count_dir' in the USER SETTINGS section."
+    )
+  )
+}
+
+# Set the project directory as working directory.
+setwd(project_dir)
+
+
+# ==========================================================
+# 4. IDENTIFY COUNT FILES
+# ==========================================================
+
+count_files <- list.files(
+  path = count_dir,
+  pattern = count_file_pattern,
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+# Stop if no count files are found.
+if (length(count_files) == 0) {
+  stop(
+    paste0(
+      "No count files matching ",
+      count_file_pattern,
+      " were found in:\n",
+      count_dir
+    )
+  )
+}
+
+# Report number of files found.
+message(
+  "Number of count files found: ",
+  length(count_files)
+)
+
+# Display sample file names.
+print(basename(count_files))
+
+
+# ==========================================================
+# 5. FUNCTION TO READ ONE COUNT FILE
+# ==========================================================
+
+read_count_file <- function(file) {
+
+  counts <- read.delim(
+    file,
+    header = FALSE,
+    row.names = 1,
+    check.names = FALSE
+  )
+
+  # Check that the file contains at least two data columns.
+  # The original workflow used the second data column as
+  # the gene-count column.
+  if (ncol(counts) < 2) {
+    stop(
+      paste0(
+        "Count file contains fewer than two data columns:\n",
+        file
+      )
+    )
+  }
+
+  # Keep the second data column, as in the original workflow.
+  counts <- counts[, 2, drop = FALSE]
+
+  # Derive the sample name from the filename.
+  sample_name <- sub(
+    count_file_pattern,
+    "",
+    basename(file)
+  )
+
+  colnames(counts) <- sample_name
+
+  return(counts)
+}
+
+
+# ==========================================================
+# 6. READ ALL COUNT FILES
+# ==========================================================
+
+count_list <- lapply(
+  count_files,
+  read_count_file
+)
+
+
+# ==========================================================
+# 7. QUALITY CHECKS BEFORE COMBINING
+# ==========================================================
+
+# ---- Check 1: sample names must be unique ----
+
+sample_names <- vapply(
+  count_list,
+  function(x) colnames(x)[1],
+  character(1)
+)
+
+if (anyDuplicated(sample_names) > 0) {
+
+  duplicated_samples <- unique(
+    sample_names[duplicated(sample_names)]
+  )
+
+  stop(
+    paste0(
+      "Duplicate sample names detected:\n",
+      paste(duplicated_samples, collapse = ", "),
+      "\n\nCheck the filenames of the .count files."
+    )
+  )
+}
+
+
+# ---- Check 2: all files must contain the same genes ----
+
+reference_genes <- rownames(count_list[[1]])
+
+same_genes <- vapply(
+  count_list,
+  function(x) {
+    identical(
+      rownames(x),
+      reference_genes
+    )
+  },
+  logical(1)
+)
+
+if (!all(same_genes)) {
+
+  problematic_files <- basename(
+    count_files[!same_genes]
+  )
+
+  stop(
+    paste0(
+      "Gene identifiers and/or gene order differ between count files.\n",
+      "Problematic files:\n",
+      paste(problematic_files, collapse = "\n"),
+      "\n\nCount files should contain the same genes in the same order."
+    )
+  )
+}
+
+
+# ---- Check 3: gene identifiers should be unique ----
+
+if (anyDuplicated(reference_genes) > 0) {
+
+  duplicated_genes <- unique(
+    reference_genes[duplicated(reference_genes)]
+  )
+
+  warning(
+    paste0(
+      "Duplicated gene identifiers were detected in the count files.\n",
+      "Number of duplicated identifiers: ",
+      length(duplicated_genes)
+    )
+  )
+}
+
+
+# ---- Check 4: counts should be numeric ----
+
+all_numeric <- all(
+  vapply(
+    count_list,
+    function(x) is.numeric(x[[1]]),
+    logical(1)
+  )
+)
+
+if (!all_numeric) {
+  stop(
+    "At least one count file contains non-numeric count values."
+  )
+}
+
+
+# ---- Check 5: counts should not contain missing values ----
+
+contains_na <- any(
+  vapply(
+    count_list,
+    function(x) anyNA(x),
+    logical(1)
+  )
+)
+
+if (contains_na) {
+  stop(
+    "Missing values were detected in one or more count files."
+  )
+}
+
+
+# ---- Check 6: counts should not be negative ----
+
+contains_negative <- any(
+  vapply(
+    count_list,
+    function(x) any(x[[1]] < 0),
+    logical(1)
+  )
+)
+
+if (contains_negative) {
+  stop(
+    "Negative count values were detected. Raw read counts should not be negative."
+  )
+}
+
+
+# ==========================================================
+# 8. COMBINE COUNT FILES
+# ==========================================================
+
+countmtx <- do.call(
+  cbind,
+  count_list
+)
+
+
+# ==========================================================
+# 9. FINAL COUNT-MATRIX CHECKS
+# ==========================================================
+
+message(
+  "Count matrix successfully created."
+)
+
+message(
+  "Number of genes: ",
+  nrow(countmtx)
+)
+
+message(
+  "Number of samples: ",
+  ncol(countmtx)
+)
+
+# Inspect the first rows.
+print(
+  head(countmtx)
+)
+
+# Inspect sample names.
+print(
+  colnames(countmtx)
+)
+
+# Check library sizes.
+library_sizes <- colSums(countmtx)
+
+print(
+  data.frame(
+    Sample = names(library_sizes),
+    Library_size = library_sizes
+  )
+)
+
+# Warn about samples with zero total counts.
+if (any(library_sizes == 0)) {
+
+  warning(
+    paste0(
+      "The following samples have a library size of zero:\n",
+      paste(
+        names(library_sizes)[library_sizes == 0],
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+# ==========================================================
+# 10. SAVE COUNT MATRIX
+# ==========================================================
+
+output_path <- file.path(
+  project_dir,
+  output_file
+)
+
+write.csv(
+  countmtx,
+  file = output_path,
+  row.names = TRUE
+)
+
+message(
+  "Count matrix saved to:\n",
+  output_path
+)
+
+
+# ==========================================================
+# 11. SAVE SESSION INFORMATION
+# ==========================================================
+
+session_file <- file.path(
+  project_dir,
+  "sessionInfo_00_make_count_matrix.txt"
+)
+
+capture.output(
+  sessionInfo(),
+  file = session_file
+)
+
+message(
+  "Session information saved to:\n",
+  session_file
+)
