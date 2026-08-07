@@ -1,5 +1,15 @@
 # RNA-seq Differential Expression Analysis Pipeline using edgeR 
 
+## Overview
+
+This repository contains a reproducible and customizable RNA sequencing (RNA-seq) analysis pipeline for differential gene expression analysis using the edgeR package in R.
+
+The workflow was developed to provide a transparent and easy-to-use framework for processing gene-level count data generated from RNA-seq experiments. The pipeline guides users from raw count files through quality control, differential expression analysis, visualization, and individual gene exploration.
+
+Although the pipeline was originally developed for murine mammary gland RNA-seq data, it can readily be adapted for other organisms and experimental designs by modifying the user settings provided in each script.
+
+The scripts are written to be generally applicable, allowing users to specify their own project directory, experimental groups, filtering thresholds, normalization settings, differential expression cut-offs, and visualization options.
+
 The pipeline includes:
 
 - Count matrix generation
