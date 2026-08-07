@@ -1,0 +1,260 @@
+---
+title: "04_individual_gene_plots_fatty_acid_genes_NS_GH"
+output: html_document
+date: "2026-08-07"
+---
+############################################################
+# 04_individual_gene_plot.R
+#
+# Purpose:
+#   Plot TMM-normalized expression of a selected gene using
+#   the edgeR object generated in the previous scripts.
+#
+# Input:
+#   dge_fil.rds from 01_data_QC.R
+#
+# Output:
+#   Individual gene expression plot
+############################################################
+
+
+# ==========================================================
+# 1. USER SETTINGS
+# ==========================================================
+
+# CHANGE THIS to your own project directory
+project_dir <- "YOUR/PROJECT/DIRECTORY/HERE"
+
+# edgeR object generated during QC
+dge_file <- "dge_fil.rds"
+
+# Gene to plot
+gene <- "Wdtc1"
+
+# Metadata column to compare
+group_column <- "Condition"
+
+# Expression scale:
+#   "logCPM" = TMM-normalized log2 CPM (recommended)
+#   "CPM"    = TMM-normalized CPM
+expression_scale <- "logCPM"
+
+# Plot title
+# Leave as gene name, or change manually if desired
+plot_title <- gene
+
+# Optional manual colors
+use_manual_colors <- TRUE
+
+manual_colors <- c(
+  "CTL" = "lightblue",
+  "ES"  = "midnightblue"
+)
+
+# Output folder
+output_dir <- file.path(
+  project_dir,
+  "Results",
+  "Individual_gene_plots"
+)
+
+
+# ==========================================================
+# 2. LOAD PACKAGES
+# ==========================================================
+
+library(edgeR)
+library(ggplot2)
+
+
+# ==========================================================
+# 3. LOAD edgeR OBJECT
+# ==========================================================
+
+dge_path <- file.path(
+  project_dir,
+  dge_file
+)
+
+if (!file.exists(dge_path)) {
+  stop(
+    paste0(
+      "dge_fil.rds not found:\n",
+      dge_path
+    )
+  )
+}
+
+dge_fil <- readRDS(
+  dge_path
+)
+
+
+# ==========================================================
+# 4. CHECK GENE AND GROUPING VARIABLE
+# ==========================================================
+
+if (!(gene %in% rownames(dge_fil$counts))) {
+  stop(
+    paste0(
+      "Gene '",
+      gene,
+      "' was not found in the edgeR object."
+    )
+  )
+}
+
+
+if (!(group_column %in% colnames(dge_fil$samples))) {
+  stop(
+    paste0(
+      "Grouping variable '",
+      group_column,
+      "' was not found in dge_fil$samples."
+    )
+  )
+}
+
+
+# ==========================================================
+# 5. EXTRACT TMM-NORMALIZED EXPRESSION
+# ==========================================================
+
+if (expression_scale == "logCPM") {
+
+  expression_values <- cpm(
+    dge_fil,
+    log = TRUE
+  )[gene, ]
+
+  y_label <- "TMM-normalized log2 CPM"
+
+} else if (expression_scale == "CPM") {
+
+  expression_values <- cpm(
+    dge_fil,
+    log = FALSE
+  )[gene, ]
+
+  y_label <- "TMM-normalized CPM"
+
+} else {
+
+  stop(
+    "expression_scale must be either 'logCPM' or 'CPM'."
+  )
+}
+
+
+plot_data <- data.frame(
+  Group = dge_fil$samples[[group_column]],
+  Expression = as.numeric(expression_values)
+)
+
+
+# ==========================================================
+# 6. CUSTOM THEME
+# ==========================================================
+
+custom_theme <- theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(
+      size = 12,
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    legend.title = element_text(size = 12)
+  )
+
+
+# ==========================================================
+# 7. CREATE VIOLIN PLOT
+# ==========================================================
+
+p <- ggplot(
+  plot_data,
+  aes(
+    x = Group,
+    y = Expression,
+    color = Group
+  )
+) +
+  geom_violin(
+    trim = FALSE,
+    width = 0.6,
+    alpha = 0.7
+  ) +
+  geom_boxplot(
+    width = 0.2,
+    color = "black",
+    alpha = 0.7,
+    outlier.shape = NA
+  ) +
+  geom_jitter(
+    width = 0.08,
+    size = 2,
+    alpha = 0.8
+  ) +
+  custom_theme +
+  labs(
+    title = plot_title,
+    x = group_column,
+    y = y_label
+  )
+
+
+# Apply manual colors if requested
+if (use_manual_colors) {
+
+  p <- p +
+    scale_color_manual(
+      values = manual_colors
+    )
+}
+
+
+# Display plot
+print(p)
+
+
+# ==========================================================
+# 8. SAVE PLOT
+# ==========================================================
+
+dir.create(
+  output_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+output_file <- file.path(
+  output_dir,
+  paste0(
+    "individual_gene_",
+    gene,
+    "_",
+    expression_scale,
+    ".png"
+  )
+)
+
+
+ggsave(
+  filename = output_file,
+  plot = p,
+  device = "png",
+  width = 6,
+  height = 4,
+  units = "in",
+  dpi = 300
+)
+
+
+message(
+  "Plot saved to:\n",
+  output_file
+)
