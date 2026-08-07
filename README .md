@@ -20,7 +20,7 @@ The pipeline includes:
 - Individual gene visualization
 
 ## Workflow
-
+```
 Raw HTSeq count files
         │
         ▼
@@ -35,6 +35,7 @@ Raw HTSeq count files
       ▼         ▼
 03_volcano_plot.Rmd
 04_individual_gene_plot.Rmd 
+```
 
 ## Repository structure
 
