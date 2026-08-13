@@ -1,0 +1,586 @@
+---
+title: "05_GSEA_analysis_DU_GH"
+output: html_document
+date: "2026-08-13"
+---
+# Original GSEA workflow developed by: Dogukan Hazar Ulgen
+# Adapted and generalized for this repository by: Natalia K. M. Schilder
+
+############################################################
+# 05_GSEA_analysis.R
+#
+# Purpose:
+#   Perform Gene Set Enrichment Analysis (GSEA) using the
+#   complete edgeR differential-expression results.
+#
+# Input:
+#   Complete edgeR results from 02_DEG_analysis.R
+#
+# Important:
+#   GSEA uses ALL tested genes. Do not pre-filter the input
+#   using a DEG log2FC or FDR cutoff.
+############################################################
+
+
+# ==========================================================
+# 1. USER SETTINGS
+# ==========================================================
+
+# CHANGE THIS to your own project directory
+project_dir <- "YOUR/PROJECT/DIRECTORY/HERE"
+
+
+# ----------------------------------------------------------
+# Input differential-expression table
+# ----------------------------------------------------------
+
+# Use the COMPLETE edgeR results, not the filtered DEG table.
+deg_results_file <- file.path(
+  project_dir,
+  "Results",
+  "DGEA",
+  "DEG_lists",
+  "YOUR_CUTOFF_FOLDER",
+  "all_tested_genes_ES_vs_CTL.csv"
+)
+
+
+# ----------------------------------------------------------
+# Organism annotation
+# ----------------------------------------------------------
+
+# This version is configured for mouse.
+OrgDb <- org.Mm.eg.db
+
+
+# ----------------------------------------------------------
+# GO ontology
+# ----------------------------------------------------------
+
+# Options:
+#   "BP" = Biological Process
+#   "MF" = Molecular Function
+#   "CC" = Cellular Component
+#   "ALL" = all GO ontologies
+ontology <- "BP"
+
+
+# ----------------------------------------------------------
+# RANKING METHOD
+# ----------------------------------------------------------
+
+# GSEA requires one ranked value for every tested gene.
+#
+# Options:
+#
+#   "PValue"
+#       -log10(raw p-value) * sign(log2FC)
+#
+#   "FDR"
+#       -log10(BH-adjusted FDR) * sign(log2FC)
+#
+#
+ranking_method <- "PValue"
+
+
+# ----------------------------------------------------------
+# Multiple-testing correction for GSEA
+# ----------------------------------------------------------
+
+p_adjust_method <- "BH"
+
+
+# ----------------------------------------------------------
+# GSEA calculation cutoff
+# ----------------------------------------------------------
+
+# clusterProfiler only retains pathways below this p-value
+# in the returned GSEA object.
+#
+# A relatively permissive value can be used here so that
+# pathways remain available for later inspection.
+#
+gsea_pvalue_cutoff <- 0.5
+
+
+# ----------------------------------------------------------
+# Final enrichment significance threshold
+# ----------------------------------------------------------
+
+# This is the threshold used when defining/reporting
+# significant enriched pathways.
+#
+gsea_FDR_cutoff <- 0.10
+
+
+# ----------------------------------------------------------
+# Number of permutations
+# ----------------------------------------------------------
+
+n_permutations <- 10000
+
+
+# ----------------------------------------------------------
+# Number of pathways shown in summary plots
+# ----------------------------------------------------------
+
+show_categories <- 15
+
+
+# ----------------------------------------------------------
+# Output directory
+# ----------------------------------------------------------
+
+output_dir <- file.path(
+  project_dir,
+  "Results",
+  "GSEA"
+)
+
+
+# ==========================================================
+# 2. LOAD PACKAGES
+# ==========================================================
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(ggplot2)
+library(dplyr)
+
+
+# ==========================================================
+# 3. CHECK INPUTS
+# ==========================================================
+
+if (!dir.exists(project_dir)) {
+  stop(
+    paste0(
+      "Project directory does not exist:\n",
+      project_dir
+    )
+  )
+}
+
+
+if (!file.exists(deg_results_file)) {
+  stop(
+    paste0(
+      "Complete DEG result file not found:\n",
+      deg_results_file
+    )
+  )
+}
+
+
+dir.create(
+  output_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+
+# ==========================================================
+# 4. LOAD COMPLETE edgeR RESULTS
+# ==========================================================
+
+DE <- read.csv(
+  deg_results_file,
+  check.names = FALSE
+)
+
+
+required_columns <- c(
+  "Gene",
+  "logFC",
+  "PValue",
+  "FDR"
+)
+
+
+missing_columns <- setdiff(
+  required_columns,
+  colnames(DE)
+)
+
+
+if (length(missing_columns) > 0) {
+  stop(
+    paste0(
+      "Required column(s) missing:\n",
+      paste(
+        missing_columns,
+        collapse = ", "
+      )
+    )
+  )
+}
+
+
+message(
+  "Genes available for GSEA: ",
+  nrow(DE)
+)
+
+
+# ==========================================================
+# 5. CREATE GSEA RANKING STATISTIC
+# ==========================================================
+
+# Avoid log10(0) if values have been rounded to zero.
+smallest_positive_p <- min(
+  DE$PValue[DE$PValue > 0],
+  na.rm = TRUE
+)
+
+smallest_positive_fdr <- min(
+  DE$FDR[DE$FDR > 0],
+  na.rm = TRUE
+)
+
+
+DE$PValue_for_rank <- ifelse(
+  DE$PValue <= 0,
+  smallest_positive_p,
+  DE$PValue
+)
+
+
+DE$FDR_for_rank <- ifelse(
+  DE$FDR <= 0,
+  smallest_positive_fdr,
+  DE$FDR
+)
+
+
+if (ranking_method == "PValue") {
+
+  DE$rank_score <-
+    -log10(DE$PValue_for_rank) *
+    sign(DE$logFC)
+
+} else if (ranking_method == "FDR") {
+
+  DE$rank_score <-
+    -log10(DE$FDR_for_rank) *
+    sign(DE$logFC)
+
+} else {
+
+  stop(
+    "ranking_method must be either 'PValue' or 'FDR'."
+  )
+}
+
+
+# Remove genes without usable ranking values.
+DE_ranked <- DE %>%
+  filter(
+    !is.na(Gene),
+    !is.na(rank_score),
+    is.finite(rank_score)
+  )
+
+
+# ==========================================================
+# 6. CONVERT GENE SYMBOLS TO ENTREZ IDS
+# ==========================================================
+
+gene_conversion <- bitr(
+  DE_ranked$Gene,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = OrgDb
+)
+
+
+DE_ranked <- DE_ranked %>%
+  inner_join(
+    gene_conversion,
+    by = c("Gene" = "SYMBOL")
+  )
+
+
+# If multiple symbols/IDs produce duplicate Entrez IDs,
+# retain the entry with the largest absolute ranking score.
+DE_ranked <- DE_ranked %>%
+  arrange(
+    desc(abs(rank_score))
+  ) %>%
+  distinct(
+    ENTREZID,
+    .keep_all = TRUE
+  )
+
+
+# ==========================================================
+# 7. CREATE RANKED GENE LIST
+# ==========================================================
+
+gene_list <- DE_ranked$rank_score
+
+names(gene_list) <- DE_ranked$ENTREZID
+
+
+gene_list <- sort(
+  gene_list,
+  decreasing = TRUE
+)
+
+
+# GSEA requires a ranked list containing both positive
+# and negative values.
+if (!any(gene_list > 0) ||
+    !any(gene_list < 0)) {
+
+  warning(
+    paste0(
+      "The ranked gene list does not contain both positive ",
+      "and negative values."
+    )
+  )
+}
+
+
+message(
+  "Genes entering GSEA after Entrez conversion: ",
+  length(gene_list)
+)
+
+
+# ==========================================================
+# 8. RUN GO GSEA
+# ==========================================================
+
+gsea_result <- gseGO(
+  geneList = gene_list,
+  OrgDb = OrgDb,
+  keyType = "ENTREZID",
+  ont = ontology,
+  pvalueCutoff = gsea_pvalue_cutoff,
+  pAdjustMethod = p_adjust_method,
+  nPermSimple = n_permutations,
+  verbose = FALSE
+)
+
+
+# ==========================================================
+# 9. SAVE COMPLETE GSEA RESULTS
+# ==========================================================
+
+gsea_table <- as.data.frame(
+  gsea_result
+)
+
+
+write.csv(
+  gsea_table,
+  file.path(
+    output_dir,
+    paste0(
+      "GSEA_GO_",
+      ontology,
+      "_all_results.csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+# ==========================================================
+# 10. SAVE SIGNIFICANT GSEA RESULTS
+# ==========================================================
+
+gsea_significant <- gsea_table %>%
+  filter(
+    p.adjust < gsea_FDR_cutoff
+  )
+
+
+write.csv(
+  gsea_significant,
+  file.path(
+    output_dir,
+    paste0(
+      "GSEA_GO_",
+      ontology,
+      "_FDR_",
+      gsea_FDR_cutoff,
+      ".csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+message(
+  "Significant pathways at FDR < ",
+  gsea_FDR_cutoff,
+  ": ",
+  nrow(gsea_significant)
+)
+
+
+# ==========================================================
+# 11. DOT PLOT
+# ==========================================================
+
+if (nrow(gsea_table) > 0) {
+
+  p_dot <- clusterProfiler::dotplot(
+    gsea_result,
+    showCategory = show_categories,
+    x = "NES",
+    color = "p.adjust"
+  ) +
+    labs(
+      title = paste0(
+        "GSEA – GO ",
+        ontology
+      )
+    )
+
+
+  print(
+    p_dot
+  )
+
+
+  ggsave(
+    filename = file.path(
+      output_dir,
+      paste0(
+        "GSEA_dotplot_GO_",
+        ontology,
+        ".pdf"
+      )
+    ),
+    plot = p_dot,
+    width = 8,
+    height = 6
+  )
+}
+
+
+# ==========================================================
+# 12. ACTIVATED / SUPPRESSED PATHWAY PLOT
+# ==========================================================
+
+if (nrow(gsea_table) > 0) {
+
+  p_direction <- clusterProfiler::dotplot(
+    gsea_result,
+    showCategory = show_categories,
+    split = ".sign",
+    x = "NES"
+  ) +
+    facet_grid(
+      . ~ .sign
+    )
+
+
+  print(
+    p_direction
+  )
+
+
+  ggsave(
+    filename = file.path(
+      output_dir,
+      paste0(
+        "GSEA_activated_suppressed_GO_",
+        ontology,
+        ".pdf"
+      )
+    ),
+    plot = p_direction,
+    width = 8,
+    height = 6
+  )
+}
+
+
+# ==========================================================
+# 13. SAVE RANKED GENE LIST
+# ==========================================================
+
+ranked_gene_table <- data.frame(
+  ENTREZID = names(gene_list),
+  Rank_score = as.numeric(gene_list)
+)
+
+
+write.csv(
+  ranked_gene_table,
+  file.path(
+    output_dir,
+    paste0(
+      "GSEA_ranked_gene_list_",
+      ranking_method,
+      ".csv"
+    )
+  ),
+  row.names = FALSE
+)
+
+
+# ==========================================================
+# 14. SAVE ANALYSIS SETTINGS
+# ==========================================================
+
+gsea_settings <- data.frame(
+
+  Setting = c(
+    "Ontology",
+    "Ranking method",
+    "Ranking formula",
+    "GSEA p-value cutoff",
+    "Final FDR cutoff",
+    "P-value adjustment",
+    "Permutations"
+  ),
+
+  Value = c(
+    ontology,
+    ranking_method,
+
+    ifelse(
+      ranking_method == "PValue",
+      "-log10(PValue) * sign(logFC)",
+      "-log10(FDR) * sign(logFC)"
+    ),
+
+    gsea_pvalue_cutoff,
+    gsea_FDR_cutoff,
+    p_adjust_method,
+    n_permutations
+  )
+)
+
+
+write.csv(
+  gsea_settings,
+  file.path(
+    output_dir,
+    "GSEA_analysis_settings.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# ==========================================================
+# 15. SAVE SESSION INFORMATION
+# ==========================================================
+
+capture.output(
+  sessionInfo(),
+  file = file.path(
+    output_dir,
+    "sessionInfo_05_GSEA_analysis.txt"
+  )
+)
+
+
+message(
+  "GSEA analysis completed."
+)
