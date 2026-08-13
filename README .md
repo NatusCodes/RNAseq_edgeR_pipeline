@@ -11,7 +11,6 @@ Although the pipeline was originally developed for murine mammary gland RNA-seq 
 The scripts are written to be generally applicable, allowing users to specify their own project directory, experimental groups, filtering thresholds, normalization settings, differential expression cut-offs, visualization options, and GSEA parameters.
 
 ## Analysis workflow
-
 ```text
 Individual HTSeq count files
         │
@@ -30,7 +29,6 @@ _plot.Rmd    _gene_plot.Rmd  _analysis.Rmd
 ```
 
 ## Repository structure
-
 ```text
 RNAseq_edgeR_pipeline/
 │
