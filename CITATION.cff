@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "RNA-seq Differential Expression Analysis Pipeline using edgeR"
+type: software
+
+authors:
+  - family-names: "Schilder"
+    given-names: "Natalia K. M."
+    orcid: "https://orcid.org/0000-0002-1101-7671"
+
+repository-code: "https://github.com/NatusCodes/RNAseq_edgeR_pipeline"
+version: "1.0.0"
+license: "MIT"
