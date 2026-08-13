@@ -110,3 +110,8 @@ This includes the expression-filtering threshold, normalization method, differen
 Each analysis script saves session information so that the R and package versions used for an analysis can be documented.
 
 Users are encouraged to retain these files together with the corresponding analysis outputs.
+
+## Acknowledgements
+
+The GSEA workflow implemented in `05_GSEA_analysis.Rmd` was adapted from code originally developed by Dogukan Hazar Ulgen, PhD. The original code was subsequently modified and generalized to integrate with the edgeR-based bulk RNA-seq workflow used in this repository.
+
