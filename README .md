@@ -1,27 +1,19 @@
-# RNA-seq Differential Expression Analysis Pipeline using edgeR 
+# RNA-seq Differential Expression Analysis Pipeline using edgeR
 
 ## Overview
 
-This repository contains a reproducible and customizable RNA sequencing (RNA-seq) analysis pipeline for differential gene expression analysis using the edgeR package in R.
+This repository contains a reproducible and customizable RNA sequencing (RNA-seq) analysis pipeline for differential gene expression analysis using the `edgeR` package in R.
 
-The workflow was developed to provide a transparent and easy-to-use framework for processing gene-level count data generated from RNA-seq experiments. The pipeline guides users from raw count files through quality control, differential expression analysis, visualization, and individual gene exploration.
+The workflow was developed to provide a transparent and easy-to-use framework for processing gene-level count data generated from RNA-seq experiments. The pipeline guides users from count-matrix generation through quality control, differential expression analysis, visualization, individual gene exploration, and Gene Set Enrichment Analysis (GSEA).
 
-Although the pipeline was originally developed for murine mammary gland RNA-seq data, it can readily be adapted for other organisms and experimental designs by modifying the user settings provided in each script.
+Although the pipeline was originally developed for murine mammary gland RNA-seq data, it can be adapted for other organisms and experimental designs by modifying the **USER SETTINGS** section provided in each script.
 
-The scripts are written to be generally applicable, allowing users to specify their own project directory, experimental groups, filtering thresholds, normalization settings, differential expression cut-offs, and visualization options.
+The scripts are written to be generally applicable, allowing users to specify their own project directory, experimental groups, filtering thresholds, normalization settings, differential expression cut-offs, visualization options, and GSEA parameters.
 
-The pipeline includes:
+## Analysis workflow
 
-- Count matrix generation
-- Quality control
-- Filtering and normalization
-- Differential expression analysis
-- Volcano plot generation
-- Individual gene visualization
-
-## Workflow
-```
-Raw HTSeq count files
+```text
+Individual HTSeq count files
         │
         ▼
 00_make_count_matrix.Rmd
@@ -31,54 +23,39 @@ Raw HTSeq count files
         │
         ▼
 02_DEG_analysis.Rmd
-      │         │
-      ▼         ▼
-03_volcano_plot.Rmd
-04_individual_gene_plot.Rmd 
+      │        │        │
+      ▼        ▼        ▼
+03_volcano   04_individual   05_GSEA
+_plot.Rmd    _gene_plot.Rmd  _analysis.Rmd
 ```
 
 ## Repository structure
 
-## Repository structure
-
-```
+```text
 RNAseq_edgeR_pipeline/
 │
 ├── README.md
 ├── analysis_settings_manuscript.md
-├── scripts/
-│   ├── 00_make_count_matrix.Rmd
-│   ├── 01_data_QC.Rmd
-│   ├── 02_DEG_analysis.Rmd
-│   ├── 03_volcano_plot.Rmd
-│   └── 04_individual_gene_plot.Rmd
+│
+└── scripts/
+    ├── 00_make_count_matrix.Rmd
+    ├── 01_data_QC.Rmd
+    ├── 02_DEG_analysis.Rmd
+    ├── 03_volcano_plot.Rmd
+    ├── 04_individual_gene_plot.Rmd
+    └── 05_GSEA_analysis.Rmd
 ```
 
-### Script descriptions
+## Script descriptions
 
-| Script | Purpose |
-|---------|---------|
-| **00_make_count_matrix.Rmd** | Combines individual HTSeq count files into a single count matrix. |
-| **01_data_QC.Rmd** | Performs annotation, quality control, filtering and TMM normalization. |
-| **02_DEG_analysis.Rmd** | Performs differential expression analysis using edgeR. |
-| **03_volcano_plot.Rmd** | Generates publication-quality volcano plots and highlights genes of interest. |
-| **04_individual_gene_plot.Rmd** | Creates violin plots for selected genes using normalized expression values. |
-
-## Requirements
-
-- R (≥4.3)
-
-Main packages:
-
-- edgeR
-- DESeq2
-- ggplot2
-- enrichR
-- clusterProfiler
-- biomaRt
-- org.Mm.eg.db 
-
-## Running the analysis
+| Script                        | Purpose                                                                                                                                                                                                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `00_make_count_matrix.Rmd`    | Imports individual HTSeq count files and combines them into a single gene-by-sample count matrix.                                                                                                                                                                                            |
+| `01_data_QC.Rmd`              | Performs gene annotation, sample-level quality control, low-expression filtering, and TMM normalization.                                                                                                                                                                                     |
+| `02_DEG_analysis.Rmd`         | Performs differential expression analysis using `edgeR`, including dispersion estimation, negative-binomial generalized linear modelling, likelihood-ratio testing, and multiple-testing correction.                                                                                         |
+| `03_volcano_plot.Rmd`         | Generates volcano plots from the complete edgeR differential-expression results using user-defined log2FC and FDR thresholds, with optional highlighting of predefined gene sets.                                                                                                            |
+| `04_individual_gene_plot.Rmd` | Visualizes selected genes using TMM-normalized CPM or logCPM values derived from the edgeR object.                                                                                                                                                                                           |
+| `05_GSEA_analysis.Rmd`        | Performs Gene Set Enrichment Analysis using the complete ranked differential-expression results. Genes can be ranked using raw P values or adjusted P values together with the sign of the log2FC, and enrichment significance is assessed using multiple-testing-adjusted pathway P values. |
 
 ## Running the pipeline
 
@@ -89,32 +66,49 @@ Run the scripts in the following order:
 3. `02_DEG_analysis.Rmd`
 4. `03_volcano_plot.Rmd`
 5. `04_individual_gene_plot.Rmd`
+6. `05_GSEA_analysis.Rmd`
 
-Each script contains a **USER SETTINGS** section where users can specify project-specific parameters such as directories, sample information, filtering thresholds, differential expression cut-offs and visualization settings.
+Scripts 03–05 use outputs generated by the preceding scripts and can be run independently once the required input files have been generated.
+
+Each script contains a **USER SETTINGS** section where users can specify project-specific parameters such as directories, sample information, filtering thresholds, differential expression cut-offs, visualization settings, and GSEA parameters.
 
 ## Input
 
-HTSeq count files (.count)
+The pipeline expects:
 
-Sample metadata
+* Individual gene-level HTSeq count files
+* A sample metadata file containing experimental group information
+* Mouse gene annotation through `org.Mm.eg.db` for the original workflow
 
-Mouse genome annotation
+For other organisms, the annotation database and gene-ID conversion settings should be modified accordingly.
 
-## Output
+## Main outputs
 
-Count matrix
+Depending on the scripts used, the pipeline generates:
 
-Quality control figures
+* Combined gene-by-sample count matrices
+* Quality-control summaries and figures
+* Filtered and TMM-normalized edgeR objects
+* Complete differential-expression result tables
+* Thresholded DEG lists
+* Volcano plots
+* Individual gene-expression plots
+* Ranked gene lists for GSEA
+* GSEA pathway tables and enrichment plots
+* Session information and analysis-setting files for reproducibility
 
-Normalized expression values
+## Manuscript-specific analysis settings
 
-Differential expression tables
+The scripts in this repository are designed for general use and therefore include multiple configurable analysis options.
 
-Volcano plots
+The exact parameter choices used in the accompanying manuscript are documented in:
 
-Individual gene plots
+`analysis_settings_manuscript.md`
 
+This includes the expression-filtering threshold, normalization method, differential-expression criteria, volcano-plot criteria, GSEA ranking statistic, and enrichment significance threshold.
 
-The parameter settings used for the accompanying manuscript are described in:
+## Reproducibility
 
-analysis_settings_manuscript.md
+Each analysis script saves session information so that the R and package versions used for an analysis can be documented.
+
+Users are encouraged to retain these files together with the corresponding analysis outputs.
