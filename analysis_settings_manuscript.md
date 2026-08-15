@@ -60,7 +60,7 @@ No additional hypothesis test or statistical cutoff was applied during generatio
 
 ## Gene Set Enrichment Analysis (GSEA)
 
-The GSEA analysis workflow was adapted from code originally developed by Dogukan Hazar Ulgen, PhD and subsequently modified to operate on the complete edgeR differential-expression results used in this study.
+The GSEA analysis workflow was adapted from code originally developed by Doğukan Hazar Ülgen, PhD and subsequently modified to operate on the complete edgeR differential-expression results used in this study.
 
 GSEA was performed using the complete ranked list of tested genes rather than a DEG-filtered subset.
 
