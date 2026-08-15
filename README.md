@@ -113,5 +113,5 @@ Users are encouraged to retain these files together with the corresponding analy
 
 ## Acknowledgements
 
-The GSEA workflow implemented in `05_GSEA_analysis.Rmd` was adapted from code originally developed by Dogukan Hazar Ulgen, PhD. The original code was subsequently modified and generalized to integrate with the edgeR-based bulk RNA-seq workflow used in this repository.
+The GSEA workflow implemented in `05_GSEA_analysis.Rmd` was adapted from code originally developed by Doğukan Hazar Ülgen, PhD. The original code was subsequently modified and generalized to integrate with the edgeR-based bulk RNA-seq workflow used in this repository.
 
