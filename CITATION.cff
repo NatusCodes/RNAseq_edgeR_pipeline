@@ -8,6 +8,10 @@ authors:
     given-names: "Natalia K. M."
     orcid: "https://orcid.org/0000-0002-1101-7671"
 
+  - family-names: "Ülgen"
+    given-names: "Doğukan Hazar"
+    orcid: "https://orcid.org/0000-0001-8891-8593"
+
 repository-code: "https://github.com/NatusCodes/RNAseq_edgeR_pipeline"
 version: "1.0.0"
 license: "MIT"
